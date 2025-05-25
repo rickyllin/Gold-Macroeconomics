@@ -1,0 +1,265 @@
+---
+title: "單變量黃金時間數列分析"
+author: "林子立"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r, source data, echo=F}
+source("data_cleaning.R")
+
+##library
+library(tseries)
+library(aTSA)
+library(forecast)
+```
+
+#Step1: Exploratory Data Analysis
+
+##Data Visualization
+```{r, data visualization (i), echo=T}
+
+# 時間向量與價格
+dates <- AU_OIL$Date
+gold <- AU_OIL$GoldPrice_interp
+
+# 繪圖（線圖，不畫 x 軸）
+plot(dates, gold, type = "l",
+     main = "Gold Price Time Series",
+     ylab = "Gold Price",
+     xlab = "Date",
+     xaxt = "n")  # 不畫預設 x 軸
+
+# 建立每年 1 月 1 日的日期向量
+years <- seq(from = as.Date("2010-01-01"), to = as.Date("2025-01-01"), by = "year")
+
+# 標上年份作為 x 軸刻度
+axis(side = 1, at = years, labels = format(years, "%Y"))
+adf.test(gold)
+```
+此圖呈現的是自2010年以來，LMBA黃金每日拍賣價（AM）的價格。從圖中可以看到，價格以大週期來看可以以2016年為分界找到兩個趨勢。在2016年以前黃金價格經歷先升後降的趨勢；2016年之後則是持續攀升。其中值得注意的現象是，黃金價格兩、三年就會存在一次跳動情形，造成短期價格劇烈變化的情況，如2013年終、2016年底、2019年底、2021年初及2024年初。
+除了部分時間存在劇烈跳動的價格變化以外，長期趨勢也存在單調遞增與增加速度加快的趨勢。從此觀點出發，合理懷疑此資料序列存在單根。近一步使用Augmented Dickey-Fuller檢定（以下簡稱ADF檢定），可以發現不管有無趨勢(Trend)或飄移（Drift）的加入，以及滯後期為0-9期之間，強烈的證據都指向單根存在於此序列資料中。為了符合對於穩定態（Stationary）資料的統計假設，以下使用常見的資料處理方法：取對數及差分進行探討。
+
+```{r, data visualization (ii), echo=T}
+
+# 時間向量與價格
+dates <- AU_OIL$Date
+gold <- log(AU_OIL$GoldPrice_interp)
+
+# 繪圖（線圖，不畫 x 軸）
+plot(dates, gold, type = "l",
+     main = "Gold Price Time Series",
+     ylab = "Gold Price",
+     xlab = "Date",
+     xaxt = "n")  # 不畫預設 x 軸
+
+# 建立每年 1 月 1 日的日期向量
+years <- seq(from = as.Date("2010-01-01"), to = as.Date("2025-01-01"), by = "year")
+
+# 標上年份作為 x 軸刻度
+axis(side = 1, at = years, labels = format(years, "%Y"))
+
+adf.test(gold)
+```
+首先嘗試的分析方法為一次差分。從圖中可以發現資料仍舊存在短期的劇烈變動以及穩定的增加趨勢。而且可以發現此增加趨勢似乎沒有緩和的現象，表明此時間數列可能存在單根。是以，近一步透過ADF檢定方法，分析趨勢、飄移及滯後期之下的資料是否存在單根。從檢定結果的報表中可以發現不管有無趨勢(Trend)或飄移（Drift）的加入，以及滯後期為0-9期之間，強烈的證據都指向單根存在於此序列資料中。為了符合對於穩定態（Stationary）資料的統計假設，以下使用常見的資料處理方法：取對數及差分進行探討。
+
+
+
+
+
+```{r, data visualization (iii), echo=T}
+# Step 1: 差分後的價格
+gold_diff <- diff(AU_OIL$GoldPrice_interp)
+
+# Step 2: 調整時間向量（去掉第一天，因為差分少一天）
+dates_diff <- AU_OIL$Date[-1]  # 或 tail(dates, -1)
+
+# Step 3: 繪圖（關閉預設 x 軸）
+plot(dates_diff, gold_diff, type = "l",
+     main = "Differenced Gold Price Time Series",
+     ylab = "Differenced Gold Price",
+     xlab = "Date",
+     xaxt = "n")
+
+# Step 4: 標出每年 1 月 1 日的位置
+years <- seq(from = as.Date("2010-01-01"), to = as.Date("2025-01-01"), by = "year")
+
+# 只選擇 years 有在日期範圍內的
+valid_years <- years[years %in% dates_diff]
+
+# Step 5: 畫上 x 軸標籤（以年份顯示）
+axis(side = 1, at = valid_years, labels = format(valid_years, "%Y"))
+
+
+adf.test(diff(AU_OIL$GoldPrice_interp))
+
+```
+其次，嘗試的資料屬於進行差分處理的資料，從資料來看，雖然仍舊有部分時間的資料有劇烈波動，但是相較前兩個圖形，明顯少了穩定上升的現象。進一步檢測資料的單根，可以發現與前兩個方法完全不同的結果。不論趨勢是否存在以及落後期數，在以0.05的信心水準之下，所以組合的檢定結果都表明這個方法處理的資料不具有單根，合理推測此筆資料適合進行分析。總結來看，透過差分處理的資料不再有單根，僅剩劇烈的波動問題存在於此筆資料。
+```{r, data visualization (iv), echo=T}
+# Step 1: 差分後的價格
+gold_diff <- diff(log(AU_OIL$GoldPrice_interp))
+
+# Step 2: 調整時間向量（去掉第一天，因為差分少一天）
+dates_diff <- AU_OIL$Date[-1]  # 或 tail(dates, -1)
+
+# Step 3: 繪圖（關閉預設 x 軸）
+plot(dates_diff, gold_diff, type = "l",
+     main = "Differenced Gold Price Time Series",
+     ylab = "Differenced Gold Price",
+     xlab = "Date",
+     xaxt = "n")
+
+# Step 4: 標出每年 1 月 1 日的位置
+years <- seq(from = as.Date("2010-01-01"), to = as.Date("2025-01-01"), by = "year")
+
+# 只選擇 years 有在日期範圍內的
+valid_years <- years[years %in% dates_diff]
+
+# Step 5: 畫上 x 軸標籤（以年份顯示）
+axis(side = 1, at = valid_years, labels = format(valid_years, "%Y"))
+adf.test(diff(log(AU_OIL$GoldPrice_interp)))
+```
+再來，嘗試結合差分與對數處理的方法。從圖中可以看到劇烈波動趨於穩定，且同樣少了長期穩定上升的趨勢，合理推測此種方法不只消除單根、也緩和劇烈波動的現象。進一步檢測資料的單根，可以發現與前兩個方法完全不同的結果。不論趨勢是否存在以及落後期數，在以0.05的信心水準之下，所以組合的檢定結果都表明這個方法處理的資料不具有單根，合理推測此筆資料適合進行分析。
+總結個段資料處理方法可以發現，原始資料存在的劇烈波動及穩定上升趨勢（單根），透過結合差分及對數的處理為相對較佳的方法。故而，後續將以此方法進行深入分析與建立解釋模型。
+
+
+##Data mining
+
+```{r, acf&pacf detection, echo=T}
+par(mfrow=c(2,1))
+acf(gold_diff, lag.max=300)
+acf(gold_diff, lag.max=50)
+pacf(gold_diff, lag.max=300)
+pacf(gold_diff, lag.max=50)
+par(mfrow=c(1,1))
+```
+
+AR(1) ,MA(1)
+```{r,ARIMA model, echo=T}
+
+model1 <- arima(log(AU_OIL$GoldPrice_interp), order = c(1,1,1))
+model1
+
+plot(fitted(model1))
+nrow(AU_OIL)
+lines(1:nrow(AU_OIL), y=log(AU_OIL$GoldPrice), type="l", lwd=2, col="blue")
+
+```
+
+AR1, MA1的模型看起來不錯，
+
+```{r, residual analysis, echo=T}
+acf(residuals(model1))
+qqnorm(residuals(model1)); qqline(residuals(model1))
+ks.test(residuals(model1), "pnorm")
+
+library(nortest)
+ad.test(residuals(model1))
+Box.test(residuals(model1), lag = 20, type = "Ljung-Box")
+```
+對殘差作分析，以便符合模型設計。分析問題有：是否為常態、殘差是否有自相關性、變異數是否相等
+
+```{r, heterosckedasity test, echo=T}
+set.seed(42)  # 固定隨機種子
+
+# 假設你用的是模型殘差
+res <- residuals(model1)
+
+# 分組
+n <- length(res)
+half <- floor(n / 2)
+group1 <- res[1:half]
+group2 <- res[(half + 1):n]
+
+# 真實標準差差異
+obs_diff <- abs(sd(group1) - sd(group2))
+
+# 置換檢定
+n_perm <- 10000
+perm_diffs <- replicate(n_perm, {
+  perm <- sample(res)  # 隨機重組
+  g1 <- perm[1:half]
+  g2 <- perm[(half + 1):n]
+  abs(sd(g1) - sd(g2))
+})
+
+# p 值
+p_value <- mean(perm_diffs >= obs_diff)
+cat("Permutation test p-value:", p_value, "\n")
+
+```
+
+可以發現不管怎麼變動，p值都小於0.01，顯示該筆資料以ARIMA模型配置來說是相當合適得。
+
+```{r, fitted value CI, echo=T}
+library(forecast)
+
+# Fit ARIMA(1,1,1) model
+model1 <- arima(log(AU_OIL$GoldPrice_interp), order = c(1,1,1))
+
+# Extract fitted differences (Δlog_price)
+z_fit <- fitted(model1)  # length = N - 1
+
+# Get full time series
+log_gold <- log(AU_OIL$GoldPrice_interp)
+dates <- AU_OIL$Date
+
+# Initialize fitted log-price vector
+log_price_hat <- rep(NA, length(log_gold))
+log_price_hat[2:length(log_gold)] <- z_fit
+
+# Residual standard deviation
+resid_sd <- sd(residuals(model1), na.rm = TRUE)
+
+# CI quantiles
+z95 <- qnorm(0.975)
+z90 <- qnorm(0.95)
+
+# Confidence intervals on log scale
+upper95 <- log_price_hat + z95 * resid_sd
+lower95 <- log_price_hat - z95 * resid_sd
+upper90 <- log_price_hat + z90 * resid_sd
+lower90 <- log_price_hat - z90 * resid_sd
+
+# Plot
+plot(dates, log_gold, type = "l", col = "black", lwd = 1.5,
+     main = "ARIMA(1,1,1) Fitted Values with 95% and 90% CI",
+     xlab = "Date", ylab = "log(Gold Price)")
+
+lines(dates, log_price_hat, col = "blue", lwd = 2)
+lines(dates, upper95, col = "red", lty = 2)
+lines(dates, lower95, col = "red", lty = 2)
+lines(dates, upper90, col = "orange", lty = 3)
+lines(dates, lower90, col = "orange", lty = 3)
+
+legend("topleft", legend = c("Actual log price", "Fitted", "95% CI", "90% CI"),
+       col = c("black", "blue", "red", "orange"),
+       lty = c(1, 1, 2, 3), lwd = c(1.5, 2, 1, 1))
+```
+所有的觀測值都落在fitted value的95%信賴區間內
+
+
+```{r, predictioni, echo=T}
+p <-predict(model1, n.ahead = 12)
+exp(p$pred)
+```
+
+
+
+
+
+
+```{r, prediction2, echo=T}
+library(zoo)
+roll_sd <- rollapply(log(AU_OIL$GoldPrice_interp), width = 365, FUN = sd, align = "right", fill = NA)
+
+plot(AU_OIL$Date, roll_sd, type = "l",
+     main = "Rolling Standard Deviation (1 Year)",
+     ylab = "SD", xlab = "Date")
+
+```
+所有的觀測值都落在fitted value的95%信賴區間內
+
+
+
+
