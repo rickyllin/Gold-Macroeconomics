@@ -71,3 +71,6 @@ all.equal(check, diff_log_gold[tail(seq_along(diff_log_gold), length(fit))])
 
 
 
+
+
+

@@ -1,10 +1,11 @@
 ##data import
 library(readr)
+library(readxl)
 library(tidyverse)
 library(zoo)
 library(tseries)
-AU <- read_csv("~/政大課堂/計量經濟學（二）/期末報告/LBMA-gold_D-gold_D_EUR_AM.csv")
-OIL <- read_csv("~/政大課堂/計量經濟學（二）/期末報告/DCOILWTICO.csv")
+AU <- read_csv("~/政大課堂/計量經濟學（二）/期末報告/原始資料集/LBMA-gold_D-gold_D_EUR_AM.csv")
+OIL <- read_csv("~/政大課堂/計量經濟學（二）/期末報告/原始資料集/DCOILWTICO.csv")
 
 # Step 1: 轉換日期欄位格式
 AU <- AU %>% mutate(Date = as.Date(period))
@@ -44,3 +45,10 @@ head(AU_OIL)
 write.csv(AU_OIL, "整理過後的資料.csv")
 
 
+Data_daily <- read_excel("~/政大課堂/計量經濟學（二）/期末報告/原始資料集/dailydata.xlsx",  sheet = "Daily")
+
+
+colnames(Data_daily)
+head(Data_daily)
+Data_daily$Date <- as.Date(Data_daily$observation_date)
+Data_daily1  <- subset(Data_daily, Date >= as.Date("2010-01-01"))

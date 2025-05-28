@@ -5,8 +5,11 @@ date: "`r Sys.Date()`"
 output: word_document
 ---
 
+
+
+---Section 1: Time Series Analysis for the Gold Price (XUFIX)
 ```{r, source data, echo=F}
-source("data_cleaning.R")
+source("/Users/linzili/政大課堂/計量經濟學（二）/期末報告/分析檔案：Ｒ/data_cleaning.R")
 
 ##library
 library(tseries)
@@ -259,6 +262,115 @@ plot(AU_OIL$Date, roll_sd, type = "l",
 
 ```
 所有的觀測值都落在fitted value的95%信賴區間內
+
+
+
+
+
+
+---Section2 Time Series Analysis for the Yield rate of the Treasury Bond
+
+
+
+```{r, Bond Data Visualization, echo=F}
+par(mfrow=c(2,2))
+ts.plot(Data_daily1$`10年國債市場價格`,main= "10Y TB Price")
+ts.plot(Data_daily1$`10年期TIPS`, main="10Y TIPS")
+ts.plot(Data_daily1$`30年期TIPS`, main="30Y TIPS")
+ts.plot(Data_daily1$T10Y2Y, main="T10Y2Y")
+par(mfrow=c(1,1))
+```
+
+繪圖結果類似
+
+
+```{r, imputation for Yiled rate,echo=F}
+
+library(zoo)
+
+Bond_interp <- na.approx(Data_daily1$`10年國債市場價格`)
+
+
+```
+
+做線性插補
+
+
+
+
+```{r,unit root test, echo=F}
+library(e1071)
+##unit root test
+ts.plot(Bond_interp, main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(Bond_interp)
+
+ts.plot(log( Bond_interp ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(log(Bond_interp) )
+
+ts.plot(diff( Bond_interp ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(diff(Bond_interp) )
+
+ts.plot(diff( log( Bond_interp ) ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(diff( log(Bond_interp) ) )
+ks.test(diff((Bond_interp)), "pnorm")
+kurtosis(diff((Bond_interp)))  # 檢查風度
+
+
+qqnorm(diff(log(Bond_interp)))
+qqline(diff(log(Bond_interp)), col = 2)
+ks.test(diff(log(Bond_interp)), "pnorm")
+kurtosis(diff(log(Bond_interp)))  # 檢查峰值
+
+```
+
+結論是用差分但不要log的會比較好
+
+```{r, autocorrelation detection, echo=T}
+Bond_diff<- diff(Bond_interp)
+##EFA
+par(mfrow=c(2,2))
+acf(Bond_diff, lag.max=50)
+pacf(Bond_diff, lag.max=50)
+acf(Bond_diff, lag.max=100)
+pacf(Bond_diff, lag.max=100)
+par(mfrow=c(1,1))
+
+```
+
+ARMA(1,1) model is good for the differenced Bond Price, or ARIMA(1,1,1) model for the non-differenced Bond Price Data.
+
+
+
+```{r, model construction for the Bond data,echo=T}
+model0<- auto.arima(Bond_diff)
+model0
+model1 <- arima(Bond_diff, order=c(1,0,1))
+model1
+summary(model1)
+```
+
+
+
+---Section 3 the Vector Autoregressive model
+
+
+```{r, conintergration test,echo=T}
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
