@@ -15,6 +15,9 @@ source("/Users/linzili/政大課堂/計量經濟學（二）/期末報告/分析
 library(tseries)
 library(aTSA)
 library(forecast)
+library(lmtest)
+library(lmPerm)
+library(rugarch)
 ```
 
 #Step1: Exploratory Data Analysis
@@ -151,7 +154,7 @@ lines(1:nrow(AU_OIL), y=log(AU_OIL$GoldPrice), type="l", lwd=2, col="blue")
 
 AR1, MA1的模型看起來不錯，
 
-```{r, residual analysis, echo=T}
+```{r, residual analysis for the model1, echo=T}
 acf(residuals(model1))
 qqnorm(residuals(model1)); qqline(residuals(model1))
 ks.test(residuals(model1), "pnorm")
@@ -160,7 +163,12 @@ library(nortest)
 ad.test(residuals(model1))
 Box.test(residuals(model1), lag = 20, type = "Ljung-Box")
 ```
-對殘差作分析，以便符合模型設計。分析問題有：是否為常態、殘差是否有自相關性、變異數是否相等
+根據 Gauss-Markov 定理，線性模型若要具備最佳線性無偏估計量（BLUE）的性質，必須滿足數項假設，包括：誤差項彼此獨立、具同質變異（homoscedasticity），且通常進一步假設服從常態分布（normality），以利後續推論。在進行模型殘差分析時，本文依序透過殘差分布圖與常態分布的分位數圖（Q-Q plot），以及 Anderson-Darling 檢定（A-D 檢定） 來檢驗殘差的常態性；使用 Permutation Test 以非參數方式比較前後期殘差分布是否一致；最後再以 Box-Ljung Test 檢驗殘差的自我相關性。
+
+從殘差分析圖中可觀察到明顯的厚尾現象（heavy tail），顯示殘差偏離常態分布；同時，A-D 檢定的 p 值小於 0.01，也顯示有統計顯著的證據拒絕常態假設。此外，Box-Ljung Test 的 p 值為 0.3448，遠高於 0.05 的信心水準，表示殘差並無明顯的自相關性。
+
+基於上述殘差不符合常態分布的結果，傳統的 F 檢定將可能導致誤導性的推論，因其對常態性具高度敏感性。因此，為避免違反 F 檢定前提所帶來的偏誤，本文改以置換檢定（Permutation Test）來比較不同時間段的殘差變異，作為檢驗異質變異的替代方案。置換檢定不依賴資料的分布型態，能在較少前提下提供可靠的推論結果，特別適合應用於殘差存在偏態或厚尾的情境下。
+
 
 ```{r, heterosckedasity test, echo=T}
 set.seed(42)  # 固定隨機種子
@@ -190,78 +198,252 @@ perm_diffs <- replicate(n_perm, {
 p_value <- mean(perm_diffs >= obs_diff)
 cat("Permutation test p-value:", p_value, "\n")
 
+
+
 ```
 
-可以發現不管怎麼變動，p值都小於0.01，顯示該筆資料以ARIMA模型配置來說是相當合適得。
+基於模型殘差是否服從常態分布的疑慮，為進一步檢驗殘差變異是否隨時間改變，亦即是否存在異質變異（Heteroskedasticity）的情形，本研究採用置換檢定（Permutation Test）進行分析。置換檢定是一種非參數統計方法，適用於在不依賴特定分布假設（如常態性或等變異性）下，檢驗兩組資料在某統計量上的差異是否顯著。其核心概念在於：當虛無假設成立時，觀察值間具有可交換性（exchangeability），因此可透過隨機重排資料順序以建立統計量的虛無分布（null distribution），並比較實際觀察值的位置以計算 p 值，進而檢驗前後期殘差是否來自相同變異結構。本次分析中，最終所得的 permutation test p-value 為小於0.01，顯示殘差變異在時間上存在顯著差異，支持異質變異的存在。
+
+總結本段可以得知，ARIMA模型對於黃金日價格估計上儘管符合多項OLS假設，然而異質變異問題存在估計問題中，不僅導致最小平方法估計（OLS）不為不偏估計量(Unbiased Estimator)，且無法根據Gauss-Markov定理計算出最佳線性不偏估計式(Best Linear Unbiased Estimater)。為解決此問題，以下嘗試使用AutoRegressive Conditional Heteroskedasticity Model(以下簡稱ARCH 模型)進行分析。
 
 ```{r, fitted value CI, echo=T}
-library(forecast)
-
-# Fit ARIMA(1,1,1) model
-model1 <- arima(log(AU_OIL$GoldPrice_interp), order = c(1,1,1))
-
-# Extract fitted differences (Δlog_price)
-z_fit <- fitted(model1)  # length = N - 1
-
-# Get full time series
-log_gold <- log(AU_OIL$GoldPrice_interp)
-dates <- AU_OIL$Date
-
-# Initialize fitted log-price vector
-log_price_hat <- rep(NA, length(log_gold))
-log_price_hat[2:length(log_gold)] <- z_fit
-
-# Residual standard deviation
-resid_sd <- sd(residuals(model1), na.rm = TRUE)
-
-# CI quantiles
-z95 <- qnorm(0.975)
-z90 <- qnorm(0.95)
-
-# Confidence intervals on log scale
-upper95 <- log_price_hat + z95 * resid_sd
-lower95 <- log_price_hat - z95 * resid_sd
-upper90 <- log_price_hat + z90 * resid_sd
-lower90 <- log_price_hat - z90 * resid_sd
-
-# Plot
-plot(dates, log_gold, type = "l", col = "black", lwd = 1.5,
-     main = "ARIMA(1,1,1) Fitted Values with 95% and 90% CI",
-     xlab = "Date", ylab = "log(Gold Price)")
-
-lines(dates, log_price_hat, col = "blue", lwd = 2)
-lines(dates, upper95, col = "red", lty = 2)
-lines(dates, lower95, col = "red", lty = 2)
-lines(dates, upper90, col = "orange", lty = 3)
-lines(dates, lower90, col = "orange", lty = 3)
-
-legend("topleft", legend = c("Actual log price", "Fitted", "95% CI", "90% CI"),
-       col = c("black", "blue", "red", "orange"),
-       lty = c(1, 1, 2, 3), lwd = c(1.5, 2, 1, 1))
+# library(forecast)
+# 
+# # Fit ARIMA(1,1,1) model
+# model1 <- arima(log(AU_OIL$GoldPrice_interp), order = c(1,1,1))
+# 
+# # Extract fitted differences (Δlog_price)
+# z_fit <- fitted(model1)  # length = N - 1
+# 
+# # Get full time series
+# log_gold <- log(AU_OIL$GoldPrice_interp)
+# dates <- AU_OIL$Date
+# 
+# # Initialize fitted log-price vector
+# log_price_hat <- rep(NA, length(log_gold))
+# log_price_hat[2:length(log_gold)] <- z_fit
+# 
+# # Residual standard deviation
+# resid_sd <- sd(residuals(model1), na.rm = TRUE)
+# 
+# # CI quantiles
+# z95 <- qnorm(0.975)
+# z90 <- qnorm(0.95)
+# 
+# # Confidence intervals on log scale
+# upper95 <- log_price_hat + z95 * resid_sd
+# lower95 <- log_price_hat - z95 * resid_sd
+# upper90 <- log_price_hat + z90 * resid_sd
+# lower90 <- log_price_hat - z90 * resid_sd
+# 
+# # Plot
+# plot(dates, log_gold, type = "l", col = "black", lwd = 1.5,
+#      main = "ARIMA(1,1,1) Fitted Values with 95% and 90% CI",
+#      xlab = "Date", ylab = "log(Gold Price)")
+# 
+# lines(dates, log_price_hat, col = "blue", lwd = 2)
+# lines(dates, upper95, col = "red", lty = 2)
+# lines(dates, lower95, col = "red", lty = 2)
+# lines(dates, upper90, col = "orange", lty = 3)
+# lines(dates, lower90, col = "orange", lty = 3)
+# 
+# legend("topleft", legend = c("Actual log price", "Fitted", "95% CI", "90% CI"),
+#        col = c("black", "blue", "red", "orange"),
+#        lty = c(1, 1, 2, 3), lwd = c(1.5, 2, 1, 1))
 ```
-所有的觀測值都落在fitted value的95%信賴區間內
+
 
 
 ```{r, predictioni, echo=T}
-p <-predict(model1, n.ahead = 12)
-exp(p$pred)
+# p <-predict(model1, n.ahead = 12)
+# exp(p$pred)
 ```
 
+--------------STEP2 ARCH model
+
+```{r, Advanced Heteroskedasticity test of the Box test ,echo=T}
+Box.test(res,type="Ljung-Box", fitdf=1)
+
+```
+Recalled the result of the Ljung-Box test for the residuals which has sufficient evidence showing the series is autocorrelated. 
+
+```{r, Lagrange Multiplier test for the ARCH ,echo=T}
+
+arch.test(model1, output = TRUE)
+
+```
+為檢驗殘差中是否存在條件異質變異，本研究進一步對 ARIMA 模型殘差進行 ARCH LM 檢定（Lagrange Multiplier Test for ARCH effects）。從結果圖中可觀察到，無論是 Portmanteau Q test（PQ）或 Lagrange Multiplier test（LM）於各滯後階數下的 p 值皆遠低於 0.05，顯示在顯著水準下拒絕「不存在 ARCH 效應」的虛無假設，亦即殘差中存在顯著的變異聚集現象（volatility clustering）。因此，採用 ARCH 或 GARCH 類模型進行條件變異數建模是有其統計根據的。
 
 
+```{r, Advanced Heteroskedasticity test ,echo=T}
+library(FinTS)
+par(mfrow=c(2,1))
+acf(res^2, lag.max=20)
+pacf(res^2, lag.max=20)
+acf(res^2, lag.max=50)
+pacf(res^2, lag.max=50)
+par(mfrow=c(1,1))
 
+ArchTest(res, lags = 5)
 
+```
+ACF與PACF的圖形是用來決定ARCH模型滯後期數的判斷依據之一，良好的ARCH模型應該具有拖尾（Tails off）的ACF圖形以及截斷的（Cut-Off）的PACF圖形，PACF截斷的期數即為ARCH模型的滯後期數。從圖中可以看到ACF在第0期之後的期數，幾乎都與0沒有顯著差異；然而PACF圖形則有兩種可能：截斷在第一期以及截斷在第7期。歸納上述的圖形分析結論，可以推測殘差可能有兩個潛在模型：ARCH(1)或是ARCH(7)。以下將擬合兩個模型後，透過評估係數及相關模型指標後進行選擇。
 
 ```{r, prediction2, echo=T}
-library(zoo)
-roll_sd <- rollapply(log(AU_OIL$GoldPrice_interp), width = 365, FUN = sd, align = "right", fill = NA)
+# library(zoo)
+# roll_sd <- rollapply(log(AU_OIL$GoldPrice_interp), width = 365, FUN = sd, align = "right", fill = NA)
+# 
+# plot(AU_OIL$Date, roll_sd, type = "l",
+#      main = "Rolling Standard Deviation (1 Year)",
+#      ylab = "SD", xlab = "Date")
+#所有的觀測值都落在fitted value的95%信賴區間內
+```
 
-plot(AU_OIL$Date, roll_sd, type = "l",
-     main = "Rolling Standard Deviation (1 Year)",
-     ylab = "SD", xlab = "Date")
+
+
+
+
+
+
+
+
+
+```{r, ARIMA(1,1,1)+ARCH(7) and ARCH(1) with normal error distribution, echo=T}
+# 建立 ARCH(1) with ARIMA(1,1,1) 均值結構
+spec1 <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 0)),  # ARCH(1)
+  mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+  distribution.model = "norm"
+)
+
+# 建立 ARCH(2) with ARIMA(1,1,1) 均值結構
+spec2 <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(7, 0)),  # ARCH(7)
+  mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+  distribution.model = "norm"
+)
+
+# 使用對數轉換後的價格資料
+log_gold <- log(AU_OIL$GoldPrice_interp)
+
+# 擬合模型
+model1.1 <- ugarchfit(spec = spec1, data = log_gold)
+model1.2 <- ugarchfit(spec = spec2, data = log_gold)
+model1.1
+
+model1.2
 
 ```
-所有的觀測值都落在fitted value的95%信賴區間內
+為評估不同階數之 ARCH 模型在解釋黃金價格變異性方面的表現，本文分別建構以 ARIMA(1,1,1) 為均值結構的 ARCH(1) 與 ARCH(7) 模型進行比較。從樣本內擬合指標觀察，ARCH(7) 模型的對數似然值（LogLikelihood = 19849.64）高於 ARCH(1) 模型（19318.7），且其 AIC 值（-7.2272）亦優於 ARCH(1) 的 -7.0360，顯示在樣本內擬合層面 ARCH(7) 模型較佳。
+
+然而，深入觀察模型診斷結果可發現，ARCH(7) 存在多項統計上的潛在問題。其殘差平方的 Ljung-Box 檢定在高階（Lag 20 與 Lag 34）下出現顯著結果（p < 0.01），顯示仍存在殘差結構未被捕捉；此外，ARCH LM 檢定在 Lag 12 時亦呈現邊界顯著性（p = 0.02883），說明變異數模型可能未完全描述波動性。穩定性分析方面，ARCH(7) 模型的 alpha4 參數對應 Nyblom 統計量為 4.34，遠超過 1% 臨界值（0.75），顯示參數存在嚴重不穩定問題，且多數 alpha 參數在 robust 標準誤下變得不顯著，增加模型解釋上的不確定性。
+
+相比之下，ARCH(1) 模型雖然 AIC 略高，但模型結構簡潔，所有參數顯著，殘差與殘差平方均符合白噪音假設，且未觀察到殘留的 ARCH 效應。其 Nyblom 檢定中，唯一顯著不穩定的是 alpha1，但幅度相對 ARCH(7) 為低，整體結構較為穩定。
+
+綜上所述，ARCH(7) 雖在擬合表現上佔優，但模型不穩定且解釋力不一致，存在過度擬合風險；而 ARCH(1) 模型則在統計顯著性、殘差結構與穩定性方面表現更為穩健。因此，本文建議採用 ARCH(1) 作為黃金價格變異數建模的主要架構，並可於後續進一步考慮 ARCH(2) 或 ARCH(3) 作為潛在折衷方案。
+
+```{r, LRT for arch(1)and arch(7),echo=T}
+LL_full <- likelihood(model1.2)     # ARCH(7)
+LL_restricted <- likelihood(model1.1)  # ARCH(1)
+
+LR_stat <- 2 * (LL_full - LL_restricted)
+df <- 6
+p_value <- pchisq(LR_stat, df = df, lower.tail = FALSE)
+
+cat("Likelihood Ratio Statistic:", LR_stat, "\n")
+cat("p-value:", p_value, "\n")
+```
+為比較 ARCH(1) 與 ARCH(7) 模型在條件變異數建模上的解釋力，本文進行似然比檢定。結果顯示，ARCH(7) 模型相較於 ARCH(1) 的對數似然值顯著提高（LR 統計量 = 1061.871，df = 6，p 值 <2.2e-16），表示多加入的延遲變異數項對模型整體擬合具有統計上的顯著貢獻。然而，雖然 ARCH(7) 在樣本內表現優越，其模型參數顯著性、穩定性與殘差結構檢定結果顯示存在過度擬合與不穩定性問題，多數 項於 robust 標準誤下不顯著，Nyblom個別檢定亦出現超過臨界值情形。因此，在統計顯著與模型穩健性間取得平衡下，本文仍建議採用較為簡潔且結構穩定的 ARCH(1) 模型，並視情況進行中階（例如 ARCH(2)–ARCH(3)）模型之敏感性分析以尋求最佳折衷。
+
+```{r, residual of the resial test kurtosis and skewness, echo=T}
+library(e1071)  # for skewness and kurtosis
+
+# 取標準化殘差
+resid_std <- residuals(model1.1, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+# 取標準化殘差
+resid_std <- residuals(model1.2, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+```
+
+模型的 標準化殘差 不僅不是常態分布，還呈現極度偏態與厚尾，這會嚴重低估風險與尾端事件的機率。
+
+```{r, ARIMA(1,1,1)+ARCH(1) with skewed t-distribution error, echo=T }
+# ARCH(1) with skewed-t
+spec_sstd <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 0)),
+  mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+  distribution.model = "sstd"
+)
+
+
+# ARCH(7) with t-distribution
+spec_std <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(7, 0)),
+  mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+  distribution.model = "std"
+)
+
+
+
+
+model1.1.sstd <- ugarchfit(spec = spec_sstd, data = log_gold)
+model1.2.std <- ugarchfit(spec = spec_std, data = log_gold)
+model1.1.sstd
+
+model1.2.std
+```
+ARCH(7)裡面的參數在更換分布後仍舊有不同的部分
+
+
+
+
+
+
+兩個模型解釋力有顯著不同
+
+
+```{r, kurtosis and skewness test for the t-distributeion ARch, echo=T}
+library(e1071)  # for skewness and kurtosis
+
+# 取標準化殘差
+resid_std <- residuals(model1.1.sstd, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+# 取標準化殘差
+resid_std <- residuals(model1.2.std, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+
+```
+在本次分析中，我們針對四種不同的模型，評估它們的標準化殘差與理論分布的契合程度。首先，採用常態分布誤差的 Model 1.1（ARIMA(1,1,1) 搭配 ARCH(1)）所產生的標準化殘差表現極差，呈現出強烈的負偏態（skewness 為 -6.55）與極高的峰度（kurtosis 達 237.83），顯示誤差分布高度偏離對稱且具有非常厚的尾部，遠遠超出常態分布的假設，這使得模型在預測或風險評估上可能非常不可靠。
+相較之下，Model 1.2（ARIMA(1,1,1) 搭配 ARCH(7)）同樣假設常態分布，但在殘差表現上略有改善，偏態降至 -0.22，峰度亦降至 6.65，雖仍偏離理論常態分布，卻已不再如前者般極端。這顯示增加 ARCH 項次可在一定程度上捕捉變異結構，但仍無法解決常態分布誤差對金融數列厚尾的低適應性問題。
+進一步地，當我們將誤差分布改為 skewed-t 分布時，情況有明顯改善。Model 1.1.sstt（ARIMA(1,1,1) + ARCH(1) + skewed-t error）所產生的殘差具有良好的對稱性（skewness 約 0.14）與可接受的厚尾（kurtosis 為 8.58），明顯顯示 skewed-t 分布能有效捕捉金融資料中的非對稱與重尾特性。該模型的誤差分布與資料行為較為吻合，使模型在預測與風險估計上更具可靠性。
+最後，在 Model 1.2.std（ARIMA(1,1,1) + ARCH(7) + t 分布誤差）中，誤差雖仍略帶負偏態（skewness -0.35），但峰度為 8.21，整體上仍可視為合理且穩定的模型。t 分布具備對極端值與波動的容納能力，因此在高波動金融資產建模中，具有實用價值。
+綜合而言，純常態分布對誤差的假設無法充分描述金融時間數列的實際行為，尤其在厚尾與偏態明顯的情況下。相較之下，skewed-t 與 t 分布能更好地捕捉資料特性，其中又以 Model 1.1.sstt 的誤差行為最為貼近理論分布，是目前四者中最具代表性的模型選擇。
+
 
 
 
@@ -355,7 +537,6 @@ summary(model1)
 
 
 ```{r, conintergration test,echo=T}
-
 
 
 ```
