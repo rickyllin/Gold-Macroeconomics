@@ -427,6 +427,7 @@ ku <- kurtosis(resid_std)
 
 cat("Skewness:", sk, "\n")
 cat("Kurtosis:", ku, "\n")
+
 # 取標準化殘差
 resid_std <- residuals(model1.2.std, standardize = TRUE)
 
@@ -445,12 +446,79 @@ cat("Kurtosis:", ku, "\n")
 綜合而言，純常態分布對誤差的假設無法充分描述金融時間數列的實際行為，尤其在厚尾與偏態明顯的情況下。相較之下，skewed-t 與 t 分布能更好地捕捉資料特性，其中又以 Model 1.1.sstt 的誤差行為最為貼近理論分布，是目前四者中最具代表性的模型選擇。
 
 
+```{r, ARCH(7) for raw data,echo=T}
+# 計算對數報酬（log return）
+log_return <- diff(log(AU_OIL$GoldPrice_interp))
+ts.plot(diff(log_gold))
+acf(log_return^2)
+pacf(log_return^2)
+
+```
+
+```{r, ARCH(1) for the solely return rate, echo=T }
+# ARCH(1) with skewed-t
+spec_sstd2 <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 0)),
+  mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+  distribution.model = "std"
+)
+
+
+# ARCH(7) with t-distribution
+spec_std2 <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(7, 0)),
+  mean.model = list(armaOrder = c(0, 0), include.mean = TRUE),
+  distribution.model = "std"
+)
 
 
 
 
+model2.1.std <- ugarchfit(spec = spec_sstd2, data = log_gold)
+model2.2.std <- ugarchfit(spec = spec_std2, data = log_gold)
+model2.1.sstd
 
----Section2 Time Series Analysis for the Yield rate of the Treasury Bond
+model2.2.std
+```
+
+
+```{r, residual test for the ARCH model- momnet detection, echo=T}
+library(e1071)  # for skewness and kurtosis
+
+# 取標準化殘差
+resid_std <- residuals(model2.1.std, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+
+# 取標準化殘差
+resid_std <- residuals(model2.2.std, standardize = TRUE)
+
+# 計算指標
+sk <- skewness(resid_std)
+ku <- kurtosis(resid_std)
+
+cat("Skewness:", sk, "\n")
+cat("Kurtosis:", ku, "\n")
+```
+當前模型採用 standard t-distribution 作為誤差分布進行估計，並以標準化殘差的偏態與峰度作為評估模型適切性的依據。分析結果顯示，無論在 model2.1.std 或 model2.2.std 中，殘差的偏態值皆略呈負值（分別為 -0.245 與 -0.253），顯示其分布具有輕微的左偏性。雖未顯著偏離對稱分布，但仍可能反映誤差項分布在實際資料中未能完全對稱。更顯著的偏離則出現在峰度部分。兩模型的 Excess Kurtosis 皆約為 -1.713，推算原始峰度約為 1.287，顯著低於常態分布理論值（Kurtosis = 3），亦與 heavy-tailed 分布特徵不符。
+
+此一結果顯示，雖然模型在估計階段假設殘差服從 heavy-tailed 的 t-distribution，但實際標準化殘差並未表現出重尾特性，反而呈現輕尾分布結構。此一偏離可能意味著模型所假設的誤差分布與資料的真實生成機制不一致。若模型目的在於精確捕捉報酬序列的高階統計性質，則應考慮進一步檢驗其他替代分布的適配性，例如常態分布、skewed-normal 或 skewed-t 分布。此外，若殘差仍呈現異常波動或非對稱性，亦可考慮引入 GARCH 組件以提升對波動性聚集現象的建模能力。整體而言，上述統計指標提供初步證據，指出目前模型之分布假設可能未能充分反映資料本身的統計結構，後續應進一步進行模型修正與比較，以提升估計效能與推論信賴度。
+
+------Section2.1 GARCH(可以不報告這段)
+
+
+
+
+-----Section2.2 Stochastic Volatility model
+
+
+
+---Section3 Time Series Analysis for the Yield rate of the Treasury Bond
 
 
 
