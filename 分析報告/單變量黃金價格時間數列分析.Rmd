@@ -6,7 +6,6 @@ output: word_document
 ---
 
 
-
 ---Section 1: Time Series Analysis for the Gold Price (XUFIX)
 ```{r, source data, echo=F}
 source("/Users/linzili/政大課堂/計量經濟學（二）/期末報告/分析檔案：Ｒ/data_cleaning.R")

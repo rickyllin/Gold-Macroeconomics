@@ -52,3 +52,19 @@ colnames(Data_daily)
 head(Data_daily)
 Data_daily$Date <- as.Date(Data_daily$observation_date)
 Data_daily1  <- subset(Data_daily, Date >= as.Date("2010-01-01"))
+
+
+
+# 使用線性插值補值「10年國債市場價格」
+# 合併兩個資料框
+# 以 AU_OIL 為主體進行合併
+merged_data <- AU_OIL %>%
+  left_join(Data_daily, by = "Date")
+
+merged_data_interp <- cbind(merged_data$GoldPrice_interp, merged_data$`10年國債市場價格`)
+colnames(merged_data_interp) <- c("Gold", "Bond")
+merged_data_interp <-as.data.frame(merged_data_interp)
+merged_data_interp$Bond <- na.approx(merged_data_interp$Bond, na.rm=F)
+#
+
+merged_data_interp <- merged_data_interp[which( complete.cases(merged_data_interp)==T ), ]

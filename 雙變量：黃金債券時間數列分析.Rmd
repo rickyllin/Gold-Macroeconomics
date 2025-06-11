@@ -1,0 +1,171 @@
+---
+title: "多變量黃金時間數列模型"
+author: "林子立"
+date: "`r Sys.Date()`"
+output: word_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+---Section3 Time Series Analysis for the Yield rate of the Treasury Bond
+
+```{r, Bond Data Visualization, echo=F}
+source("/Users/linzili/政大課堂/計量經濟學（二）/期末報告/分析檔案：Ｒ/data_cleaning.R")
+##library
+library(tseries)
+library(aTSA)
+library(forecast)
+library(lmtest)
+library(lmPerm)
+library(rugarch)
+library(e1071)
+library(zoo)
+library(nortest)
+library(vars)
+
+par(mfrow=c(1,1))
+ts.plot(Data_daily1$`10年國債市場價格`,main= "10Y TB Price", ylab="Bond Price")
+
+par(mfrow=c(1,1))
+```
+
+繪圖結果類似
+
+```{r, imputation for Yiled rate,echo=F}
+
+
+
+Bond_interp <- na.approx(Data_daily1$`10年國債市場價格`)
+
+
+```
+
+做線性插補
+
+```{r,unit root test, echo=F}
+
+##unit root test
+ts.plot(Bond_interp, main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(Bond_interp)
+
+ts.plot(log( Bond_interp ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(log(Bond_interp) )
+
+ts.plot(diff( Bond_interp ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(diff(Bond_interp) )
+
+ts.plot(diff( log( Bond_interp ) ), main="10Y term Bond Price", ylab="Price", xlab="Days")
+adf.test(diff( log(Bond_interp) ) )
+
+```
+In this step, we uses 2*2 design factors (log-scaled & Difference) to pre-processing the data. From the graph, it shows that two graph without the differecing processed has the trend to grow unstoppably which may imply the unit root in these series. On the other hand, the two graph with the differenced pre-processed has the obvious zero-mean and no continually growing trend. Also, the ADF test for the series shows that the data has significant evidence to show that the series is stationary. 
+Explore deeper to the data.
+
+
+```{r, autocorrelation detection, echo=T}
+Bond_diff<- diff(log(Bond_interp))
+##EDA
+par(mfrow=c(2,2))
+acf(Bond_diff, lag.max=50)
+pacf(Bond_diff, lag.max=50)
+acf(Bond_diff, lag.max=100)
+pacf(Bond_diff, lag.max=100)
+par(mfrow=c(1,1))
+
+```
+
+ARMA(1,1) model is good for the differenced Bond Price, or ARIMA(1,1,1)
+model for the non-differenced Bond Price Data.
+
+```{r, model construction for the Bond data,echo=T}
+model1 <- arima(Bond_diff, order=c(1,0,1))
+model1
+summary(model1)
+```
+The Auto-Regression model for the data shows the significant effect on the previous data. From the summary, both the coefficient for the AR and MA has the large t-value as well as the high p-value, which support the causality of the previous data for the future data.
+
+
+
+Residual Analysis
+
+```{r, liung box test, echo=T}
+res1 <-residuals(model1)
+
+Box.test(res1,type="Ljung-Box",lag = 10)
+
+ad.test(res1)
+ks.test(res1, "pnorm")
+
+kurtosis(res1)
+skewness(res1)
+```
+當我們進行時間序列建模時，殘差的統計檢定結果往往反映出模型能否有效掌握資料的動態特性。本次初步以 ARIMA(1,0,1) 模型對資料進行建構，並進行了兩項常見的殘差診斷：Box-Ljung 自相關檢定與 Anderson-Darling 正態性檢定，藉此探討模型的適配性與殘差特性。
+
+Box-Ljung 檢定結果顯示，統計量為 117.62，在自由度 10 下的 p 值小於 2.2 × 10⁻¹⁶，顯示殘差存在顯著的自相關性。這代表目前所選的 ARIMA 模型尚無法捕捉資料中潛藏的結構特徵。另一方面，Anderson-Darling 正態性檢定亦指出殘差並不符合常態分佈，p 值同樣小於 2.2 × 10⁻¹⁶，顯示殘差分佈可能具有偏態或厚尾的特性。
+
+為暸解殘差的分布特性是否具有偏態或厚尾，本段利用峰值與偏度作為判斷依據。由上表可知，此分布應該不具有偏態，但具有厚尾的現象，顯示誤差的常態分佈假設可能不符合資料型態
+。
+鑑於此，我們進一步思考是否有更合適的模型能涵蓋資料間潛在的交互影響。在這樣的脈絡下，向量自回歸模型（VAR）成為一個合理且具有彈性的替代方案。與單變數的 ARIMA 模型不同，VAR 模型能同時處理多個時間序列變數，並捕捉它們之間的雙向影響與延遲關係。若原始資料中包含例如某變數的影響或其他共同變動因子，VAR 模型將更能體現這些關聯，並提升模型解釋力與預測準確度。
+
+因此，未來的分析方向應轉向建立合適階數的 VAR 模型，並重新檢定殘差的自相關與正態性，以確保模型的統計性質符合假設。若配合適當的變數選擇與前處理，VAR 不僅有助於修正目前模型的不足，也為理解時間序列變數間的動態交互關係提供更全面的框架。
+
+
+---Section 3 the Vector Autoregressive model
+
+```{r, combine the data for gold and bond,echo=T}
+merged_data_interp <- as.data.frame( merged_data_interp)
+var_model <- VAR(merged_data_interp, p=1)
+var_model
+summary(var_model)
+
+```
+
+在本次分析中，我們使用了向量自回歸模型（VAR）來研究黃金價格和債券價格之間的動態關聯。VAR模型是一種常用的多變量時間序列分析方法，能夠捕捉多個變數之間的相互影響。在這個模型中，黃金與債券價格被視為內生變數，並且我們將其滯後期的影響納入模型，旨在探索兩者之間的動態聯繫。
+
+根據VAR模型的結果，我們可以得出以下結論。黃金價格的滯後一期對其當期價格的影響非常顯著，回歸係數為1.00035，並且該係數的t值非常高（2778.989），表明黃金價格的滯後期幾乎完全解釋了當期的價格變動。相比之下，債券價格的滯後一期對黃金價格的影響並不顯著，其回歸係數為0.13878，t值為1.103，p值為0.270，這表示債券價格的變化對黃金價格的影響較弱。
+
+在債券價格的回歸方程中，債券價格的滯後一期對當期債券價格的影響極為顯著，回歸係數為0.99886，且t值高達1599.496，顯示出強烈的滯後依賴性。黃金價格的滯後一期對債券價格的影響則較為微弱，回歸係數為4.849e-06，儘管顯示為顯著（p值為0.00668），但該係數極小，表示黃金價格的變化對債券價格的影響非常有限。
+
+儘管VAR模型的解釋力非常強，從R平方指標來看，兩個方程的解釋度均達到了99%以上，但模型殘差的診斷結果顯示出一些問題。首先，進行了Ljung-Box檢定，結果顯示黃金價格的殘差和債券價格的殘差均顯示出顯著的自相關性。具體來說，黃金價格的殘差的X-squared為18.459，p值為1.736e-05，而債券價格的殘差的X-squared為10.468，p值為0.001215，均表明殘差存在自相關，暗示模型可能未能完全捕捉到資料中的某些結構，可能需要進一步改進。
+
+
+
+
+
+
+```{r, residual analysis for the VARmodel gold , echo=T}
+# 提取每個變數的殘差
+residual_gold <- residuals(var_model)[, "Gold"]
+residual_bond <- residuals(var_model)[, "Bond"]
+Box.test(residual_gold, type = "Ljung-Box")
+qqnorm(residual_gold)
+qqline(residual_gold)
+ad.test(residual_gold)
+
+
+```
+其次，分別針對福昂金與債券假格的殘差進行進行了正態性檢定（使用Anderson-Darling檢定），結果顯示黃金價格與債券價格的殘差均未通過正態性檢定，p值小於0.01，這表明殘差顯著偏離正態分佈。這樣的偏離可能會影響模型的穩定性，並且會對未來預測的準確性產生一定影響。
+
+儘管該模型顯示出非常高的解釋力，但從診斷檢測結果來看，模型仍有改進的空間。首先，對殘差自相關性和正態性偏離的檢測結果提示我們，可能需要進一步調整模型以更好地捕捉資料中的結構。例如，可以考慮增加滯後期數來捕捉長期的動態關聯，或者使用其他形式的模型，如非線性向量自回歸（NVAR），來處理可能的非線性關聯。
+
+此外，針對殘差的自相關性問題，未來可以考慮進行更為深入的模型優化，或使用例如自回歸條件異方差（ARCH）模型等來處理變異性較高的資料。
+
+
+
+```{r, residual analysis for the VARmodel bond , echo=T}
+# 提取每個變數的殘差
+residual_gold <- residuals(var_model)[, "Gold"]
+residual_bond <- residuals(var_model)[, "Bond"]
+Box.test(residual_bond, type = "Ljung-Box")
+qqnorm(residual_bond)
+qqline(residual_bond)
+ad.test(residual_bond)
+
+
+```
+
+
+
+
+總之，這個VAR模型提供了一個有力的框架來理解黃金與債券價格之間的關聯，並且雖然存在一些自相關性和正態性偏離，這依然是一個在時間序列分析中常見的問題，並且可以通過進一步的模型調整來改善。這些改進將有助於提升模型的解釋力，並進一步提升未來預測的可靠性。
